@@ -1,0 +1,20 @@
+{
+  "name": "sparkbox-personal-collection-activator",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "让收藏重新出现并转化为行动的个人收藏激活系统 MVP",
+  "scripts": {
+    "dev": "node server.mjs",
+    "preview": "node server.mjs",
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/app.js && node --check src/domain.js && node --check src/store.js && node --check src/eazo-auth.js && node --check server.mjs && node --check sw.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
+  }
+}

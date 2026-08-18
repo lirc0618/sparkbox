@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Sparkbox">
+  <rect width="512" height="512" rx="118" fill="#FFF6E6"/>
+  <path d="M120 152c0-30.9 25.1-56 56-56h160c30.9 0 56 25.1 56 56v208c0 30.9-25.1 56-56 56H176c-30.9 0-56-25.1-56-56V152Z" fill="#111111"/>
+  <path d="M176 154h160v164l-80-48-80 48V154Z" fill="#6C5CE7"/>
+  <path d="m256 148 15.8 45.1 47.2 8.4-39.7 26.9 6.7 47.6-37.7-29.8-43.2 20.8 16.5-45.1-33.2-34.7 47.9 1.8L256 148Z" fill="#FFD93D"/>
+  <path d="M176 346h160" stroke="#DDFBF0" stroke-width="24" stroke-linecap="round"/>
+</svg>
