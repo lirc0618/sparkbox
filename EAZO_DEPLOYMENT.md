@@ -2,9 +2,9 @@
 
 ## 当前迁移状态
 
-项目已经接入 Eazo 邮箱登录、PostgreSQL 云端状态、对象级同步账本、冲突检测以及 App AI 接口。当前数据库使用 `sparkbox_states` 保存整份状态 JSON，并用 `sparkbox_sync_items` 支持对象级合并；下文的规范化业务表仍是下一阶段目标，不是当前实现。
+项目已经接入 Eazo 邮箱登录、PostgreSQL 云端状态、对象级同步账本、冲突检测以及 DeepSeek 文本整理接口。当前数据库使用 `sparkbox_states` 保存整份状态 JSON，并用 `sparkbox_sync_items` 支持对象级合并；下文的规范化业务表仍是下一阶段目标，不是当前实现。
 
-本地运行可以不配置云端环境变量；云同步需要 `DATABASE_URL`，AI 还需要 Eazo App ID、API 地址和私钥。部署前先运行 `npm ci && npm test && npm run check`。
+本地运行可以不配置云端环境变量；云同步需要 `DATABASE_URL` 和 Eazo 私钥，AI 整理需要 `DEEPSEEK_API_KEY`。部署前先运行 `npm ci && npm test && npm run check`。
 
 ## 迁移目标
 

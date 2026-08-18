@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import pg from "pg";
 import { requireAuth } from "./src/eazo-auth.js";
+import { deepSeekChat } from "./src/deepseek.js";
 
 const { Pool } = pg;
 const port = Number(process.env.PORT || 3000);
@@ -47,7 +48,6 @@ const mimeTypes = {
 
 const ALLOWED_STATUSES = new Set(["inbox", "to_read", "to_action", "in_use", "reference"]);
 const ALLOWED_CONTENT_TYPES = new Set(["article", "video", "social", "tool", "product", "note", "other"]);
-const MAX_IMAGE_BYTES = 4_500_000;
 const RESTRICTED_LINK_RULES = [
   { label: "微信/公众号", hosts: ["mp.weixin.qq.com", "weixin.qq.com"], risk: "可能需要在微信内打开，外部服务通常无法读取完整正文" },
   { label: "小红书", hosts: ["xiaohongshu.com", "xhslink.com"], risk: "常需要登录或 App 环境才能查看完整内容" },
@@ -93,13 +93,6 @@ async function readJsonBody(request, maxBytes = 1_500_000) {
   } catch {
     throw Object.assign(new Error("请求内容格式不正确"), { status: 400 });
   }
-}
-
-function imageDataUrlByteSize(value) {
-  const base64 = String(value || "").split(",")[1] || "";
-  if (!base64) return 0;
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  return Math.floor((base64.length * 3) / 4) - padding;
 }
 
 async function ensureSchema() {
@@ -343,51 +336,6 @@ async function handleCloudState(request, response) {
   }
 }
 
-function getModelForCapability(capability = "text") {
-  let modelMap = {};
-  if (process.env.EAZO_AI_MODELS_JSON) {
-    try { modelMap = JSON.parse(process.env.EAZO_AI_MODELS_JSON); } catch { modelMap = {}; }
-  }
-  return typeof modelMap[capability] === "string" ? modelMap[capability] : process.env.EAZO_AI_MODEL_KEY;
-}
-
-async function appAiChat({ capability = "text", messages, params = {}, viewerUserId = "" }) {
-  const platformBase = process.env.EAZO_APP_AI_API_BASE?.replace(/\/$/, "") || process.env.EAZO_API_BASE?.replace(/\/$/, "");
-  const appId = process.env.EAZO_APP_ID || process.env.NEXT_PUBLIC_EAZO_APP_ID;
-  const privateKey = process.env.EAZO_PRIVATE_KEY;
-  const modelKey = getModelForCapability(capability);
-
-  if (!platformBase || !appId || !privateKey || !modelKey) {
-    const error = new Error(`App AI 的 ${capability} 能力尚未配置完整，请先在 Eazo 中保存对应模型配置。`);
-    error.status = 503;
-    throw error;
-  }
-
-  const result = await fetch(`${platformBase}/api/app-ai/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-eazo-app-id": appId,
-      Authorization: `Bearer ${privateKey}`,
-    },
-    body: JSON.stringify({ app_id: appId, model_key: modelKey, messages, viewer_user_id: viewerUserId || undefined, stream: false, params }),
-    cache: "no-store",
-  });
-
-  if (!result.ok) {
-    const body = await result.clone().json().catch(() => null);
-    const code = body?.detail?.code || body?.code;
-    const error = new Error(result.status === 402 && code === "app_ai_unavailable"
-      ? "AI 功能暂时不可用。如需继续使用，请联系该应用的创作者。"
-      : `App AI 请求失败：${result.status}`);
-    error.status = result.status;
-    error.code = code;
-    throw error;
-  }
-
-  return result.json();
-}
-
 function extractJsonObject(value) {
   const text = String(value || "").trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
   try { return JSON.parse(text); } catch {}
@@ -420,82 +368,8 @@ function normalizeSuggestion(input) {
   };
 }
 
-function normalizeImageExtraction(input) {
-  const contentType = stringField(input.contentType, 30);
-  const tags = Array.isArray(input.tags) ? input.tags.map((tag) => stringField(tag, 24)).filter(Boolean).slice(0, 8) : [];
-  return {
-    title: stringField(input.title, 160),
-    visibleText: stringField(input.visibleText || input.rawText || input.text, 3000),
-    summary: stringField(input.summary, 520),
-    sourceHint: stringField(input.sourceHint || input.source, 40),
-    contentType: ALLOWED_CONTENT_TYPES.has(contentType) ? contentType : "",
-    tags,
-    confidence: Number.isFinite(Number(input.confidence)) ? Math.max(0, Math.min(1, Number(input.confidence))) : null,
-    warnings: Array.isArray(input.warnings) ? input.warnings.map((warning) => stringField(warning, 120)).filter(Boolean).slice(0, 4) : [],
-  };
-}
-
 async function handleImageExtract(request, response) {
-  try {
-    if (request.method !== "POST") {
-      sendJson(response, 405, { error: "Method not allowed" });
-      return;
-    }
-
-    let viewerUser = null;
-    if (getHeader(request, "x-eazo-session")) {
-      try {
-        viewerUser = authenticate(request);
-      } catch {
-        viewerUser = null;
-      }
-    }
-    const body = await readJsonBody(request, 7_000_000);
-    const imageDataUrl = typeof body.imageDataUrl === "string" ? body.imageDataUrl : "";
-    const context = body.context && typeof body.context === "object" ? body.context : {};
-    if (!/^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/i.test(imageDataUrl)) {
-      sendJson(response, 400, { error: "请上传 PNG、JPG 或 WebP 截图" });
-      return;
-    }
-    if (imageDataUrlByteSize(imageDataUrl) > MAX_IMAGE_BYTES) {
-      sendJson(response, 413, { error: "截图太大了，请压缩到 4.5MB 以内再上传" });
-      return;
-    }
-
-    const result = await appAiChat({
-      capability: "vision",
-      messages: [
-        {
-          role: "system",
-          content: "你是 Sparkbox 的截图文字提取助手。用户会上传来自微信、小红书、知识星球、Notion、Bilibili 等平台的截图。只提取截图中可见的信息，不要推测截图外内容。只返回严格 JSON：title, visibleText, summary, sourceHint, contentType(article|video|social|tool|product|note|other), tags(2-6 个中文短标签), warnings, confidence(0-1)。如果文字很少或看不清，在 warnings 中说明。",
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: JSON.stringify({ language: "zh-CN", existingTitle: context.title || "", existingUrl: context.url || "", existingSource: context.source || "", userNote: context.notes || "" }) },
-            { type: "image_url", image_url: { url: imageDataUrl } },
-          ],
-        },
-      ],
-      viewerUserId: viewerUser?.id || "",
-      params: { temperature: 0.1, max_tokens: 1200 },
-    });
-    const content = result?.choices?.[0]?.message?.content;
-    const extraction = normalizeImageExtraction(extractJsonObject(content));
-    if (!extraction.visibleText && !extraction.title && !extraction.summary && !extraction.sourceHint) {
-      extraction.warnings = [...extraction.warnings, "没有识别到足够的可见文字，请换更清晰的截图或手动补充摘录。"].slice(0, 4);
-    }
-    sendJson(response, 200, { extraction });
-  } catch (error) {
-    if (error.status === 402 && error.code === "app_ai_unavailable") {
-      sendJson(response, 402, { code: "app_ai_unavailable", message: error.message });
-      return;
-    }
-    const message = error.status === 503
-      ? "截图识别暂时不可用。你仍然可以手动粘贴可见摘录，Sparkbox 会继续保守整理。"
-      : error.message || "截图提取失败";
-    sendJson(response, error.status || 500, { error: message });
-  }
+  sendJson(response, request.method === "POST" ? 501 : 405, { error: request.method === "POST" ? "DeepSeek V4 暂不支持图片输入，请粘贴截图中的可见文字后再整理。" : "Method not allowed" });
 }
 
 async function handleOrganize(request, response) {
@@ -505,7 +379,7 @@ async function handleOrganize(request, response) {
       return;
     }
 
-    const viewerUser = getHeader(request, "x-eazo-session") ? authenticate(request) : null;
+    if (getHeader(request, "x-eazo-session")) authenticate(request);
     const body = await readJsonBody(request);
     const bookmark = body.bookmark && typeof body.bookmark === "object" ? body.bookmark : {};
     const projects = Array.isArray(body.projects) ? body.projects.slice(0, 20) : [];
@@ -548,15 +422,11 @@ async function handleOrganize(request, response) {
       },
     ];
 
-    const result = await appAiChat({ capability: "text", messages, viewerUserId: viewerUser?.id || "", params: { temperature: 0.2, max_tokens: 900 } });
+    const result = await deepSeekChat({ messages, params: { temperature: 0.2, max_tokens: 900 } });
     const content = result?.choices?.[0]?.message?.content;
     const suggestion = normalizeSuggestion(extractJsonObject(content));
     sendJson(response, 200, { suggestion });
   } catch (error) {
-    if (error.status === 402 && error.code === "app_ai_unavailable") {
-      sendJson(response, 402, { code: "app_ai_unavailable", message: error.message });
-      return;
-    }
     sendJson(response, error.status || 500, { error: error.message || "AI 整理失败" });
   }
 }

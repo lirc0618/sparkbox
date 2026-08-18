@@ -24,4 +24,12 @@ test("local server serves the app at the root path", async (t) => {
   assert.ok(response, "server did not start");
   assert.equal(response.status, 200);
   assert.match(await response.text(), /<title>Sparkbox/);
+
+  const aiResponse = await fetch(`http://127.0.0.1:${port}/api/ai/organize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bookmark: { title: "Test" }, projects: [] }),
+  });
+  assert.equal(aiResponse.status, 503);
+  assert.match((await aiResponse.json()).error, /DEEPSEEK_API_KEY/);
 });

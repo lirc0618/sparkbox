@@ -13,7 +13,7 @@ Sparkbox 不是一个更大的收藏夹，而是一个让旧收藏重新出现�
 - 收藏 CRUD：新增、编辑、删除、归档、状态管理与详情页。
 - 本地优先：未登录时业务数据写入浏览器 `localStorage`，刷新后保留。
 - Eazo 云同步：支持邮箱登录、PostgreSQL 整库备份、对象级同步、冲突检测和同步健康检查。
-- AI 辅助整理：配置 Eazo App AI 后可整理收藏字段，并可从截图提取内容。
+- DeepSeek AI 整理：配置官方 API Key 后，可生成摘要、价值、下一步、标签、状态和项目建议。
 - 14 天验证：排除内置示例，跟踪真实收藏数、活跃天数、已回顾内容和旧收藏激活结果。
 - 数据安全：链接规范化与重复检测、JSON 全量导出与校验恢复、损坏原始数据保护、删除二次确认。
 - 响应式界面：桌面左侧导航；手机底部导航。
@@ -66,7 +66,7 @@ npm run check
 - 验证建议：先导入约 30 条自己的真实收藏，再打开“14 天验证”开始周期；每天处理少量今日卡片并记录实际结果。
 - 云同步：登录 Eazo 且配置 `DATABASE_URL` 后，可将本地状态首次迁移到 PostgreSQL；未配置或未登录时继续使用本地模式。
 
-当前版本不会自动抓取网页正文，也不会伪造摘要。URL 会先安全保存，再提示人工补充；AI 整理只处理用户已经提供的内容或截图。
+当前版本不会自动抓取网页正文，也不会伪造摘要。URL 会先安全保存，再提示人工补充；DeepSeek 只处理用户已经提供的文字。DeepSeek V4 是纯文本模型，截图不会上传，请先复制或转写可见文字。
 
 ## 可选的云端配置
 
@@ -75,9 +75,11 @@ npm run check
 ```dotenv
 DATABASE_URL=postgresql://user:password@host:5432/database
 EAZO_PRIVATE_KEY=replace-with-your-eazo-private-key
+DEEPSEEK_API_KEY=replace-with-your-deepseek-api-key
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
-`DATABASE_URL` 用于云同步，Eazo App ID、API 地址和私钥用于登录及 AI。服务端会使用 Node.js 原生加密验证 Eazo 会话，不额外引入浏览器鉴权 SDK 的依赖链。不要提交 `.env`。如果只使用本地模式，不需要创建 `.env`。
+`DATABASE_URL` 和 Eazo 私钥只用于云同步及登录；`DEEPSEEK_API_KEY` 只在服务端调用 DeepSeek，不会发送到浏览器。默认使用 `deepseek-v4-flash`，需要更强效果时可改成 `deepseek-v4-pro`。不要提交 `.env`。如果只使用本地模式且不使用 AI，不需要创建 `.env`。
 
 ## 项目结构
 
@@ -88,7 +90,7 @@ src/app.js          路由、页面与交互
 src/domain.js       收藏规则、搜索与每日回顾算法
 src/store.js        本地持久化与 CRUD
 tests/              领域和存储测试
-server.mjs          静态服务器、Eazo 鉴权、PostgreSQL 同步与 AI API
+server.mjs          静态服务器、Eazo 鉴权、PostgreSQL 同步与 DeepSeek API
 EAZO_DEPLOYMENT.md  云端迁移现状与后续部署说明
 ```
 
@@ -102,5 +104,5 @@ EAZO_DEPLOYMENT.md  云端迁移现状与后续部署说明
 
 - 未登录时仍是单用户、单浏览器存储；清理站点数据会删除本地内容，请定期导出 JSON。
 - 云端当前保存整份状态 JSON，并维护对象级同步账本；尚未拆分为规范化业务表。
-- 没有自动网页抓取、公开注册、团队或支付。
+- 没有自动网页抓取、图片识别、公开注册、团队或支付。
 - 浏览器端 Eazo SDK 目前从 `esm.sh` 动态加载，首次登录检查需要联网。
